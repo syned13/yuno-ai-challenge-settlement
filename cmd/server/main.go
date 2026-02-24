@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/denys-rosario/settlement-reconciler/internal/generator"
 	"github.com/denys-rosario/settlement-reconciler/internal/handler"
@@ -74,6 +75,9 @@ func main() {
 	// Wrap with CORS and logging middleware.
 	wrapped := loggingMiddleware(corsMiddleware(mux))
 
+	// Keep-alive: self-ping every 10 minutes to prevent Render free tier spin-down.
+	go keepAlive(port)
+
 	addr := fmt.Sprintf(":%s", port)
 	log.Printf("Settlement Reconciliation Service starting on %s", addr)
 	log.Printf("API docs: http://localhost:%s/health", port)
@@ -100,4 +104,18 @@ func loggingMiddleware(next http.Handler) http.Handler {
 		log.Printf("%s %s", r.Method, r.URL.Path)
 		next.ServeHTTP(w, r)
 	})
+}
+
+func keepAlive(port string) {
+	url := fmt.Sprintf("http://localhost:%s/health", port)
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		resp, err := http.Get(url)
+		if err != nil {
+			log.Printf("keep-alive ping failed: %v", err)
+			continue
+		}
+		resp.Body.Close()
+	}
 }
